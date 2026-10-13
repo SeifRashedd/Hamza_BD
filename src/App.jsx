@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { EnvelopeSection } from './components/EnvelopeSection.jsx';
 import { FloatingParty } from './components/FloatingParty.jsx';
 import { FriendForm } from './components/FriendForm.jsx';
 import { Hero } from './components/Hero.jsx';
-import { MusicPlayer } from './components/MusicPlayer.jsx';
 import { Sky } from './components/Decorations.jsx';
 import { ToastRegion, useToasts } from './components/Toasts.jsx';
 import { WishCake } from './components/WishCake.jsx';
@@ -18,10 +17,7 @@ export default function App() {
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [unlocked, setUnlocked] = useState(loadUnlocked);
   const [newIds, setNewIds] = useState(() => new Set());
-  const [musicPlaying, setMusicPlaying] = useState(false);
   const { toasts, notify, dismiss } = useToasts();
-  const musicRef = useRef(null);
-  const toggleMusic = useCallback(() => musicRef.current?.toggle(), []);
 
   // Expose scroll position as a CSS variable for the hero parallax.
   useEffect(() => {
@@ -96,7 +92,7 @@ export default function App() {
       <FloatingParty />
 
       <main>
-        <Hero musicPlaying={musicPlaying} onToggleMusic={toggleMusic} />
+        <Hero />
         <EnvelopeSection
           envelopes={envelopes}
           status={status}
@@ -113,7 +109,6 @@ export default function App() {
         Made with <span aria-label="love">❤️</span> by {BIRTHDAY_PERSON}’s friends
       </footer>
 
-      <MusicPlayer ref={musicRef} onPlayingChange={setMusicPlaying} notify={notify} />
       <ToastRegion toasts={toasts} dismiss={dismiss} />
     </>
   );

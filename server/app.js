@@ -177,7 +177,6 @@ function securityHeaders(withCsp) {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     'img-src * data: blob:',
-    'media-src * blob:',
     "connect-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",

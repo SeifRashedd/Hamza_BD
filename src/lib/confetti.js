@@ -3,7 +3,9 @@ import { prefersReducedMotion } from './motion.js';
 // A small, dependency-free canvas confetti. The canvas is a manual popover so
 // that it renders in the top layer — above an open <dialog> and its backdrop.
 
-const COLORS = ['#ff5fa2', '#8b5cf6', '#ffd23f', '#4cc9f0', '#ff8c42', '#ffffff', '#f472b6'];
+const PARTY_COLORS = ['#ff5fa2', '#8b5cf6', '#ffd23f', '#4cc9f0', '#ff8c42', '#ffffff', '#f472b6'];
+const GOLD_COLORS = ['#f5d98f', '#e6b94d', '#d4a017', '#b8860b', '#fff3cc', '#8b5a2b', '#ffffff'];
+const palette = () => (document.documentElement.dataset.theme === 'gold' ? GOLD_COLORS : PARTY_COLORS);
 const MAX_PARTICLES = 450;
 
 let canvas = null;
@@ -69,6 +71,7 @@ export function burst({ x = 0.5, y = 0.5, angle = 90, spread = 70, count = 120, 
 
   const available = Math.max(0, MAX_PARTICLES - particles.length);
   const total = Math.min(count, available);
+  const colors = palette();
 
   for (let i = 0; i < total; i++) {
     const direction = ((angle + (Math.random() - 0.5) * spread) * Math.PI) / 180;
@@ -79,7 +82,7 @@ export function burst({ x = 0.5, y = 0.5, angle = 90, spread = 70, count = 120, 
       vx: Math.cos(direction) * velocity,
       vy: -Math.sin(direction) * velocity,
       size: 6 + Math.random() * 6,
-      color: COLORS[(Math.random() * COLORS.length) | 0],
+      color: colors[(Math.random() * colors.length) | 0],
       shape: Math.random() < 0.65 ? 'rect' : 'circle',
       rotation: Math.random() * Math.PI * 2,
       spin: (Math.random() - 0.5) * 0.3,

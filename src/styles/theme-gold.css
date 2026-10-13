@@ -1,0 +1,209 @@
+/* ═══ "Gold" theme — black · brown · gold ═══════════════════════════════════
+   Enabled by THEME = 'gold' in src/config.js (sets <html data-theme="gold">).
+   Everything here only overrides colours; layout and animation are shared. */
+
+/* Variables live outside the layer so they override the unlayered :root defaults. */
+:root[data-theme='gold'] {
+  --gold: #e6b94d;
+  --gold-light: #f5d98f;
+  --gold-deep: #b8860b;
+  --cream: #f8ecd4;
+
+  /* Text sitting directly on the dark background */
+  --ink: var(--cream);
+  --ink-soft: rgb(248 236 212 / 0.78);
+  --accent: var(--gold);
+  --focus: var(--gold-light);
+  --btn-gradient: linear-gradient(135deg, #f7dc8f 0%, #e6b94d 45%, #b8860b 100%);
+  --shadow-soft: 0 18px 40px -18px rgb(0 0 0 / 0.7);
+}
+
+@layer components {
+
+  :root[data-theme='gold'] body {
+    background-color: #120c07;
+    background-image: linear-gradient(165deg, #0b0806 0%, #24160b 32%, #4a2d14 62%, #1c120a 85%, #0b0806 100%);
+  }
+  :root[data-theme='gold'] ::selection {
+    background: var(--gold);
+    color: #1a110a;
+  }
+
+  /* Light surfaces keep dark text */
+  :root[data-theme='gold'] :is(.modal, .toast, .input, .form-success) {
+    --ink: #2b1a0c;
+    --ink-soft: rgb(43 26 12 / 0.72);
+    --accent: #8a5a12;
+    --focus: #2b1a0c;
+  }
+
+  /* ── Background glows & sprinkles ─────────────────────────────────── */
+  :root[data-theme='gold'] .sky__blob--pink { background: #b8860b; opacity: 0.28; }
+  :root[data-theme='gold'] .sky__blob--purple { background: #7a4a1f; opacity: 0.4; }
+  :root[data-theme='gold'] .sky__blob--blue { background: #5c3a1a; opacity: 0.45; }
+  :root[data-theme='gold'] .sky__blob--yellow { background: #e6b94d; opacity: 0.18; }
+  :root[data-theme='gold'] .sprinkle { color: var(--gold) !important; }
+  :root[data-theme='gold'] .sprinkle:nth-child(3n) { color: var(--cream) !important; }
+
+  /* ── Balloons, flags, risers ───────────────────────────────────────── */
+  :root[data-theme='gold'] .balloon { --balloon-color: #d4a017 !important; }
+  :root[data-theme='gold'] :is(.balloon--hero-2, .balloon--hero-4, .balloon--side-right, .riser:nth-child(3n + 2) .balloon) {
+    --balloon-color: #8b5a2b !important;
+  }
+  :root[data-theme='gold'] :is(.balloon--hero-3, .riser:nth-child(3n) .balloon) {
+    --balloon-color: #2a2420 !important;
+  }
+  :root[data-theme='gold'] .balloon__string { color: rgb(245 217 143 / 0.45); }
+
+  :root[data-theme='gold'] .bunting__string { color: rgb(245 217 143 / 0.5); }
+  :root[data-theme='gold'] .bunting__flag { --flag-color: #e6b94d !important; }
+  :root[data-theme='gold'] .bunting__flag:nth-of-type(4n + 2) { --flag-color: #8b5a2b !important; }
+  :root[data-theme='gold'] .bunting__flag:nth-of-type(4n + 3) { --flag-color: #1c1714 !important; }
+  :root[data-theme='gold'] .bunting__flag:nth-of-type(4n + 4) { --flag-color: #f3e2b8 !important; }
+
+  /* ── Hero ──────────────────────────────────────────────────────────── */
+  :root[data-theme='gold'] .hero-badge,
+  :root[data-theme='gold'] .progress-pill,
+  :root[data-theme='gold'] .empty-state,
+  :root[data-theme='gold'] .scroll-cue,
+  :root[data-theme='gold'] .btn-ghost {
+    background: rgb(28 18 10 / 0.72);
+    border: 1px solid rgb(230 185 77 / 0.35);
+    color: var(--gold-light);
+  }
+  :root[data-theme='gold'] .hero-title__top {
+    background: linear-gradient(180deg, #fff3cc 0%, #f5d98f 45%, #c9952c 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 3px 0 rgb(0 0 0 / 0.45));
+  }
+  :root[data-theme='gold'] .hero-title__letter {
+    text-shadow:
+      0 0.04em 0 #5a3a12,
+      0 0.09em 0 rgb(0 0 0 / 0.55),
+      0 0 0.35em rgb(230 185 77 / 0.35);
+  }
+  :root[data-theme='gold'] .hero-title__letter:nth-child(5n + 1) { --letter-color: #f5d98f; }
+  :root[data-theme='gold'] .hero-title__letter:nth-child(5n + 2) { --letter-color: #e6b94d; }
+  :root[data-theme='gold'] .hero-title__letter:nth-child(5n + 3) { --letter-color: #ffe7a3; }
+  :root[data-theme='gold'] .hero-title__letter:nth-child(5n + 4) { --letter-color: #d4a017; }
+  :root[data-theme='gold'] .hero-title__letter:nth-child(5n + 5) { --letter-color: #f0cb6b; }
+  :root[data-theme='gold'] .hero-song {
+    color: var(--gold-light);
+  }
+  :root[data-theme='gold'] .section-title {
+    color: var(--gold-light);
+    text-shadow: 0 3px 0 rgb(0 0 0 / 0.4);
+  }
+
+  /* ── Buttons ───────────────────────────────────────────────────────── */
+  :root[data-theme='gold'] .btn-primary {
+    color: #1f1408;
+    box-shadow:
+      0 12px 26px -10px rgb(230 185 77 / 0.55),
+      inset 0 -3px 0 rgb(0 0 0 / 0.18),
+      inset 0 2px 0 rgb(255 255 255 / 0.35);
+  }
+  :root[data-theme='gold'] .spinner {
+    border-color: rgb(31 20 8 / 0.3);
+    border-top-color: #1f1408;
+  }
+  :root[data-theme='gold'] .skip-link {
+    background: var(--gold);
+    color: #1f1408;
+  }
+
+  /* ── Envelopes: gold, kraft, black, cream ──────────────────────────── */
+  :root[data-theme='gold'] :is(.env-theme-0, .env-theme-4) {
+    --env-back: #a6760f; --env-pocket: #e6b94d; --env-pocket-2: #f0cb6b; --env-flap: #d4a017; --env-seal: #3b2412; --env-ink: #3b2412;
+  }
+  :root[data-theme='gold'] :is(.env-theme-1, .env-theme-5) {
+    --env-back: #5e3b1d; --env-pocket: #a87442; --env-pocket-2: #bd8a56; --env-flap: #8b5a2b; --env-seal: #e6b94d; --env-ink: #2a170a;
+  }
+  :root[data-theme='gold'] :is(.env-theme-2, .env-theme-6) {
+    --env-back: #080808; --env-pocket: #2a2522; --env-pocket-2: #37302a; --env-flap: #1c1815; --env-seal: #d4a017; --env-ink: #e6b94d;
+  }
+  :root[data-theme='gold'] :is(.env-theme-3, .env-theme-7) {
+    --env-back: #b89d6b; --env-pocket: #f3e6c8; --env-pocket-2: #f8eed8; --env-flap: #e6d3a8; --env-seal: #8b5a2b; --env-ink: #4a2e17;
+  }
+  :root[data-theme='gold'] .envelope {
+    box-shadow:
+      0 22px 34px -16px rgb(0 0 0 / 0.75),
+      0 0 0 1px rgb(230 185 77 / 0.18);
+  }
+
+  :root[data-theme='gold'] .progress-pill__bar {
+    background: rgb(230 185 77 / 0.18);
+  }
+  :root[data-theme='gold'] .progress-pill__bar > span {
+    background: linear-gradient(90deg, #f5d98f, #b8860b);
+  }
+
+  /* ── Modal ─────────────────────────────────────────────────────────── */
+  :root[data-theme='gold'] .modal::backdrop {
+    background: rgb(8 5 2 / 0.7);
+  }
+  :root[data-theme='gold'] .modal__panel {
+    background:
+      radial-gradient(circle at 1px 1px, rgb(139 90 43 / 0.1) 1px, transparent 0) 0 0 / 18px 18px,
+      #fdf6e7;
+  }
+  :root[data-theme='gold'] .modal__airmail {
+    background: repeating-linear-gradient(135deg, #d4a017 0 14px, #fdf6e7 14px 22px, #3b2412 22px 36px, #fdf6e7 36px 44px);
+  }
+  :root[data-theme='gold'] .modal__close {
+    background: #fff;
+    color: #2b1a0c;
+  }
+  :root[data-theme='gold'] .message-view__sender {
+    background: linear-gradient(90deg, #b8860b, #6b3f12);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+  :root[data-theme='gold'] .letter {
+    color: #3b2412;
+    background:
+      repeating-linear-gradient(to bottom, transparent 0 calc(1.85em - 1px), rgb(139 90 43 / 0.14) calc(1.85em - 1px) 1.85em) 0 1.5rem / 100% calc(100% - 2.75rem) no-repeat,
+      white;
+  }
+  :root[data-theme='gold'] .input:focus {
+    border-color: #d4a017;
+    box-shadow: 0 0 0 4px rgb(212 160 23 / 0.25);
+  }
+  :root[data-theme='gold'] .input {
+    border-color: #ead9b5;
+  }
+
+  /* ── Friend form (dark card) ───────────────────────────────────────── */
+  :root[data-theme='gold'] .friend-card {
+    background: rgb(28 18 10 / 0.72);
+    border: 1px solid rgb(230 185 77 / 0.3);
+  }
+  :root[data-theme='gold'] .friend-card .field-error {
+    color: #ff9f9f;
+  }
+  :root[data-theme='gold'] .image-row__remove:hover,
+  :root[data-theme='gold'] .password-field__toggle:hover {
+    background: rgb(230 185 77 / 0.15);
+  }
+
+  /* ── Cake: chocolate & gold ────────────────────────────────────────── */
+  :root[data-theme='gold'] .cake__tier--bottom {
+    background:
+      radial-gradient(circle, #e6b94d 0 2px, transparent 3px) 0 14px / 22px 18px,
+      radial-gradient(circle, #f8ecd4 0 2px, transparent 3px) 11px 23px / 22px 18px,
+      linear-gradient(#6b3f1d, #3b2010);
+  }
+  :root[data-theme='gold'] .cake__tier--top {
+    background:
+      radial-gradient(circle, #3b2010 0 2px, transparent 3px) 4px 14px / 20px 16px,
+      radial-gradient(circle, #fff3cc 0 2px, transparent 3px) 14px 22px / 20px 16px,
+      linear-gradient(#f5d98f, #c9952c);
+  }
+  :root[data-theme='gold'] .cake__plate {
+    background: linear-gradient(#f5d98f, #b8860b);
+  }
+  :root[data-theme='gold'] .candle { --candle-color: #d4a017 !important; }
+  :root[data-theme='gold'] .candle:nth-child(even) { --candle-color: #6b3f1d !important; }
+}

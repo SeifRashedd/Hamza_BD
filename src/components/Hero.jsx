@@ -2,7 +2,7 @@ import { BIRTHDAY_PERSON } from '../config.js';
 import { prefersReducedMotion } from '../lib/motion.js';
 import { Balloon, Bunting } from './Decorations.jsx';
 
-export function Hero({ musicPlaying, onToggleMusic }) {
+export function Hero() {
   const scrollToMessages = () => {
     document.getElementById('messages')?.scrollIntoView({
       behavior: prefersReducedMotion() ? 'auto' : 'smooth',
@@ -45,18 +45,11 @@ export function Hero({ musicPlaying, onToggleMusic }) {
         Today is all about you <span aria-hidden="true">❤️</span>
       </p>
 
-      <button
-        type="button"
-        className={`hero-song ${musicPlaying ? 'is-playing' : ''}`}
-        onClick={onToggleMusic}
-        aria-pressed={musicPlaying}
-        data-music-control
-      >
+      <p className="hero-song">
         <span className="hero-song__note" aria-hidden="true">🎶</span>
         <span>Today is your birthday…</span>
         <span className="hero-song__note hero-song__note--late" aria-hidden="true">🎶</span>
-        <span className="hero-song__hint">{musicPlaying ? 'tap to pause' : 'tap to play the song'}</span>
-      </button>
+      </p>
 
       <button type="button" className="btn-primary btn-cta mt-8" onClick={scrollToMessages}>
         Open Your Birthday Messages <span aria-hidden="true">💌</span>
