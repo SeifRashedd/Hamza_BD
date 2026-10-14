@@ -22,12 +22,16 @@ const BACKENDS = {
 
 let ipCounter = 0;
 
+// A real 1×1 PNG, as the browser would send it (base64).
+const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const fakeJpeg = (bytes) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(bytes - 4, 7)]).toString('base64');
+
 const validSubmission = (overrides = {}) => ({
   sender_name: 'Ahmed',
   hint: 'Our first university project',
   password: 'SmartFit',
   message: 'Happy Birthday Hamza ❤️\n\nI hope this year brings you everything you wish for…',
-  image_urls: ['https://example.com/image.jpg'],
+  images: [{ data: TINY_PNG }],
   website: '',
   ...overrides,
 });
@@ -100,7 +104,7 @@ for (const [backend, openDb] of Object.entries(BACKENDS)) {
       const res = await call('/api/envelopes');
       const raw = await res.text();
 
-      for (const secret of ['Secret Sender', 'TopSecret99', 'A very hidden message body', 'Our first university project', 'scrypt']) {
+      for (const secret of ['Secret Sender', 'TopSecret99', 'A very hidden message body', 'Our first university project', 'scrypt', '/api/images/']) {
         assert.ok(!raw.includes(secret), `list response leaked "${secret}"`);
       }
       for (const envelope of JSON.parse(raw).envelopes) {
@@ -142,9 +146,48 @@ for (const [backend, openDb] of Object.entries(BACKENDS)) {
       assert.equal(body.message.id, data.envelope.id);
       assert.equal(body.message.sender_name, 'Ahmed');
       assert.equal(body.message.message, 'Happy Birthday Hamza ❤️\n\nSecond paragraph');
-      assert.equal(body.message.image_url, 'https://example.com/image.jpg');
-      assert.deepEqual(body.message.image_urls, ['https://example.com/image.jpg']);
+      assert.match(body.message.image_url, /^\/api\/images\/[0-9a-f-]{36}$/);
+      assert.deepEqual(body.message.image_urls, [body.message.image_url]);
       assert.ok(!JSON.stringify(body).includes('scrypt'), 'password hash leaked');
+    });
+
+    it('serves an uploaded photo (unchanged) once its address is known', async () => {
+      const { data } = await submit({ sender_name: 'Photo Friend', message: 'Look at this photo', password: 'cheese' });
+      const unlocked = await (
+        await call(`/api/messages/${data.envelope.id}/unlock`, { method: 'POST', body: { password: 'cheese' } })
+      ).json();
+
+      const res = await call(unlocked.message.image_url);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('content-type'), 'image/png');
+      assert.match(res.headers.get('cache-control'), /immutable/);
+      assert.deepEqual(Buffer.from(await res.arrayBuffer()), Buffer.from(TINY_PNG, 'base64'));
+    });
+
+    it('keeps several photos in the order they were added', async () => {
+      const images = [{ data: TINY_PNG }, { data: fakeJpeg(2000) }, { data: TINY_PNG }];
+      const { data } = await submit({ sender_name: 'Three Pics', message: 'Three photos', password: 'three', images });
+      const unlocked = await (
+        await call(`/api/messages/${data.envelope.id}/unlock`, { method: 'POST', body: { password: 'three' } })
+      ).json();
+
+      assert.equal(unlocked.message.image_urls.length, 3);
+      const types = [];
+      for (const url of unlocked.message.image_urls) types.push((await call(url)).headers.get('content-type'));
+      assert.deepEqual(types, ['image/png', 'image/jpeg', 'image/png']);
+    });
+
+    it('accepts an envelope with a few phone-sized photos', async () => {
+      const images = [{ data: fakeJpeg(700 * 1024) }, { data: fakeJpeg(700 * 1024) }, { data: fakeJpeg(700 * 1024) }];
+      const { res, data } = await submit({ sender_name: 'Big Pics', message: 'Three big photos', images });
+      assert.equal(res.status, 201, JSON.stringify(data));
+      assert.equal(data.envelope.has_image, true);
+    });
+
+    it('returns 404 for unknown or malformed photo addresses', async () => {
+      assert.equal((await call('/api/images/2f1c7c55-2a39-4f43-9a3a-3c0b5f2d9e11')).status, 404);
+      assert.equal((await call('/api/images/1')).status, 404);
+      assert.equal((await call('/api/images/not-a-photo')).status, 404);
     });
 
     it('ignores accidental spaces around the password', async () => {
@@ -164,8 +207,19 @@ for (const [backend, openDb] of Object.entries(BACKENDS)) {
       assert.equal(crossed.status, 422);
     });
 
-    it('accepts a message without images', async () => {
-      const { res, data } = await submit({ sender_name: 'No Pics', message: 'No image here', image_urls: [] });
+    it('accepts a message without photos', async () => {
+      const { res, data } = await submit({ sender_name: 'No Pics', message: 'No image here', images: [] });
+      assert.equal(res.status, 201);
+      assert.equal(data.envelope.has_image, false);
+    });
+
+    it('ignores image links: photos must be uploaded', async () => {
+      const { res, data } = await submit({
+        sender_name: 'Link Sender',
+        message: 'Tried to send a link',
+        images: [],
+        image_urls: ['https://example.com/image.jpg'],
+      });
       assert.equal(res.status, 201);
       assert.equal(data.envelope.has_image, false);
     });
@@ -178,21 +232,52 @@ for (const [backend, openDb] of Object.entries(BACKENDS)) {
       assert.deepEqual(Object.keys(body.errors).sort(), ['hint', 'message', 'password', 'sender_name']);
     });
 
-    it('rejects unsafe or invalid image links', async () => {
-      for (const url of ['javascript:alert(1)', 'not a url', 'ftp://example.com/a.jpg', 'https://user:pass@example.com/a.jpg']) {
+    it('rejects files that are not photos', async () => {
+      const notPhotos = {
+        svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>').toString('base64'),
+        html: Buffer.from('<html><script>alert(1)</script></html>').toString('base64'),
+        garbage: 'this is not base64 at all!!',
+        empty: '',
+      };
+      for (const [kind, payload] of Object.entries(notPhotos)) {
         ipCounter += 1;
         currentIp = `10.1.${ipCounter >> 8}.${ipCounter % 256}`;
-        const { res, data } = await submit({ sender_name: `Img ${ipCounter}`, message: `Image test ${url}`, image_urls: [url] });
-        assert.equal(res.status, 422, url);
-        assert.ok(data.errors['image_urls.0'], url);
+        const before = await db.count();
+        const { res, data } = await submit({ sender_name: `Img ${kind}`, message: `Not a photo: ${kind}`, images: [{ data: payload }] });
+        assert.equal(res.status, 422, kind);
+        assert.ok(data.errors['images.0'], kind);
+        assert.equal(await db.count(), before, `${kind} created an envelope`);
       }
     });
 
-    it('limits the number of images', async () => {
-      const urls = Array.from({ length: 5 }, (_, i) => `https://example.com/${i}.jpg`);
-      const { res, data } = await submit({ sender_name: 'Many', message: 'Too many images', image_urls: urls });
+    it('rejects a photo that is too big', async () => {
+      const { res, data } = await submit({ sender_name: 'Huge', message: 'Way too big', images: [{ data: fakeJpeg(1100 * 1024) }] });
       assert.equal(res.status, 422);
-      assert.ok(data.errors.image_urls);
+      assert.ok(data.errors['images.0']);
+    });
+
+    it('accepts 8 photos that fill the whole envelope budget', async () => {
+      // The browser keeps all photos of one envelope to 3,000,000 bytes together.
+      const images = Array.from({ length: 8 }, () => ({ data: fakeJpeg(375_000) }));
+      const { res, data } = await submit({ sender_name: 'Eight Pics', message: 'Eight photos at the limit', images });
+      assert.equal(res.status, 201, JSON.stringify(data));
+      assert.equal(data.envelope.has_image, true);
+    });
+
+    it('limits the number of photos', async () => {
+      const images = Array.from({ length: 9 }, () => ({ data: TINY_PNG }));
+      const { res, data } = await submit({ sender_name: 'Many', message: 'Too many photos', images });
+      assert.equal(res.status, 422);
+      assert.ok(data.errors.images);
+    });
+
+    it('keeps the small body limit everywhere except new envelopes', async () => {
+      const { data } = await submit({ sender_name: 'Small Limit', message: 'Body limit check', password: 'p' });
+      const res = await call(`/api/messages/${data.envelope.id}/unlock`, {
+        method: 'POST',
+        body: { password: 'x'.repeat(100 * 1024) },
+      });
+      assert.equal(res.status, 413);
     });
 
     it('stores text as-is (escaping happens when rendering) and strips control characters', async () => {

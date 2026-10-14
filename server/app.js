@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
@@ -10,6 +11,11 @@ const DAY = 24 * 60 * MINUTE;
 
 const SLOW_DOWN = 'Whoa, slow down! 😅 Take a breath and try again in a minute.';
 const BODY_LIMIT_BYTES = 32 * 1024;
+// A new envelope can carry up to 8 resized photos (the browser keeps them to
+// ~3 MB together, ~4 MB as base64). Vercel itself caps requests at 4.5 MB.
+const SUBMISSION_LIMIT_BYTES = 4_400_000;
+const TOO_BIG = 'That’s too big to fit in an envelope 😅 Try fewer or smaller photos.';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Builds the Express app. Kept separate from `index.js` so tests can start it
@@ -47,6 +53,7 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
   });
   const unlockOverall = rateLimit({ store, keyPrefix: 'unlock-all', windowMs: MINUTE, max: 60, message: SLOW_DOWN });
   const readLimit = rateLimit({ store, keyPrefix: 'read', windowMs: MINUTE, max: 120, message: SLOW_DOWN });
+  const photoLimit = rateLimit({ store, keyPrefix: 'photo', windowMs: MINUTE, max: 300, message: SLOW_DOWN });
 
   // ── Routes ───────────────────────────────────────────────────────────────
 
@@ -86,7 +93,8 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
         hint: data.hint,
         passwordHash: await hashPassword(data.password),
         message: data.message,
-        imageUrls: data.imageUrls,
+        // A random, unguessable id per photo: its URL is only revealed after unlocking.
+        images: data.images.map((image) => ({ ...image, id: randomUUID() })),
       });
 
       res.status(201).json({ success: true, message: 'Your message has been added! 🎉', envelope });
@@ -115,6 +123,9 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
           return res.status(422).json({ success: false, message: 'Wrong password' });
         }
 
+        // Uploaded photos, plus any old-style links (demo seed data).
+        const imageUrls = [...row.image_urls, ...row.image_ids.map((imageId) => `/api/images/${imageId}`)];
+
         res.set('Cache-Control', 'no-store');
         res.json({
           success: true,
@@ -122,8 +133,8 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
             id: Number(row.id),
             sender_name: row.sender_name,
             message: row.message,
-            image_url: row.image_urls[0] ?? null,
-            image_urls: row.image_urls,
+            image_url: imageUrls[0] ?? null,
+            image_urls: imageUrls,
           },
         });
       } catch (error) {
@@ -131,6 +142,23 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
       }
     },
   );
+
+  /** A photo, by its random id. Never changes, so browsers and Vercel's CDN may cache it forever. */
+  api.get('/images/:imageId', photoLimit, async (req, res) => {
+    const { imageId } = req.params;
+    if (!UUID.test(imageId)) return notFound(res, 'Photo not found');
+
+    const image = await db.findImage(imageId.toLowerCase());
+    if (!image) return notFound(res, 'Photo not found');
+
+    res.set({
+      'Content-Type': image.mime_type,
+      'Content-Disposition': 'inline',
+      'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+    });
+    res.send(image.data);
+  });
 
   api.use((req, res) => notFound(res, 'Not found'));
 
@@ -170,9 +198,14 @@ function withEnvelopeId(req, res, next) {
  * waiting on a stream that has already been consumed.
  */
 function jsonBody() {
-  const parse = express.json({ limit: BODY_LIMIT_BYTES });
+  const parseSmall = express.json({ limit: BODY_LIMIT_BYTES });
+  const parseSubmission = express.json({ limit: SUBMISSION_LIMIT_BYTES });
 
   return (req, res, next) => {
+    // Only a new envelope (which may carry photos) gets the bigger limit.
+    const isSubmission = req.method === 'POST' && req.path === '/messages';
+    const limit = isSubmission ? SUBMISSION_LIMIT_BYTES : BODY_LIMIT_BYTES;
+
     let preParsed;
     try {
       preParsed = req.body;
@@ -180,10 +213,10 @@ function jsonBody() {
       return res.status(400).json({ success: false, message: 'We couldn’t read that request.' });
     }
 
-    if (preParsed === undefined) return parse(req, res, next);
+    if (preParsed === undefined) return (isSubmission ? parseSubmission : parseSmall)(req, res, next);
 
-    if (Number(req.headers['content-length']) > BODY_LIMIT_BYTES) {
-      return res.status(413).json({ success: false, message: 'That message is too big to fit in an envelope 😅' });
+    if (Number(req.headers['content-length']) > limit) {
+      return res.status(413).json({ success: false, message: TOO_BIG });
     }
     next();
   };
@@ -229,7 +262,7 @@ function errorHandler(error, req, res, next) {
   if (res.headersSent) return next(error);
 
   if (error.type === 'entity.too.large') {
-    return res.status(413).json({ success: false, message: 'That message is too big to fit in an envelope 😅' });
+    return res.status(413).json({ success: false, message: TOO_BIG });
   }
   if (error.type === 'entity.parse.failed') {
     return res.status(400).json({ success: false, message: 'We couldn’t read that request.' });

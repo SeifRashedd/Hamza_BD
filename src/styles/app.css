@@ -1302,6 +1302,23 @@
     object-fit: cover;
     min-width: 0;
   }
+  /* 5–8 photos: smaller square tiles, two per row even on a phone. */
+  .photos--lots {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
+    gap: 0.9rem;
+  }
+  .photos--lots .photo {
+    padding: 0.4rem 0.4rem 1rem;
+  }
+  .photos--lots .photo img {
+    aspect-ratio: 1;
+    min-height: 0;
+  }
+  .photo a {
+    display: block;
+    border-radius: 4px;
+    cursor: zoom-in;
+  }
 
   .message-view__actions {
     display: flex;
@@ -1349,54 +1366,120 @@
     margin-top: 1.75rem;
   }
 
-  .images-fieldset {
+  /* ── Photo picker ───────────────────────────────────────────────────── */
+  .photos-field {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.7rem;
     margin: 0;
     padding: 0;
     border: 0;
     min-width: 0;
   }
-  .images-fieldset .field-help {
-    margin-top: -0.3rem;
+  .photos-field .field-help {
+    margin-top: -0.35rem;
   }
-  .image-row__input {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+
+  .photo-picks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6.25rem, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
-  .image-row__preview {
-    flex: none;
-    width: 3rem;
-    height: 3rem;
-    border-radius: 10px;
-    object-fit: cover;
-    box-shadow: 0 4px 10px -4px rgb(42 20 70 / 0.35);
+  .photo-pick {
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 14px;
     background: #f3ecfb;
+    box-shadow: 0 10px 18px -12px rgb(42 20 70 / 0.6);
+    animation: pop-in 0.35s cubic-bezier(0.3, 1.4, 0.5, 1) both;
   }
-  .image-row__preview--failed {
+  .photo-pick.has-error {
+    outline: 3px solid #e11d48;
+    outline-offset: 2px;
+  }
+  .photo-pick img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .photo-pick__busy {
+    position: absolute;
+    inset: 0;
     display: grid;
     place-items: center;
-    font-size: 1.2rem;
+    background: rgb(42 20 70 / 0.35);
   }
-  .image-row__remove {
-    flex: none;
+  .photo-pick__remove {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.35rem;
     display: grid;
     place-items: center;
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: 12px;
-    color: var(--ink-soft);
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 0.62);
+    color: white;
+    font-size: 0.85rem;
     font-weight: 800;
     cursor: pointer;
+    transition: background-color 0.2s, scale 0.2s;
   }
-  .image-row__remove:hover {
-    background: #fff0f5;
-    color: #be123c;
+  .photo-pick__remove:hover {
+    background: #e11d48;
+    scale: 1.08;
   }
-  .images-fieldset .link-btn {
-    align-self: flex-start;
+
+  .photo-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 1.25rem 1rem;
+    border: 2px dashed rgb(139 92 246 / 0.45);
+    border-radius: 16px;
+    background: rgb(255 255 255 / 0.55);
+    text-align: center;
+    cursor: pointer;
+    transition:
+      border-color 0.2s ease,
+      background-color 0.2s ease,
+      transform 0.2s ease;
+  }
+  .photo-drop:hover,
+  .photo-drop.is-dragging {
+    border-color: #8b5cf6;
+    background: rgb(255 255 255 / 0.85);
+    transform: translateY(-1px);
+  }
+  .photo-drop:focus-within {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+  .photo-drop__icon {
+    font-size: 1.8rem;
+  }
+  .photo-drop__title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.05rem;
+  }
+  .photo-drop__sub {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  /* "or drag them here" only makes sense with a mouse. */
+  @media (hover: none) {
+    .photo-drop__drag {
+      display: none;
+    }
   }
 
   .form-success {

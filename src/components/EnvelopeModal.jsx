@@ -244,7 +244,7 @@ export function EnvelopeModal({ envelope, number, hint, unlockedMessage, hasNext
               </div>
 
               {images.length > 0 && (
-                <div className={`photos ${images.length > 1 ? 'photos--many' : ''}`}>
+                <div className={`photos ${images.length > 1 ? 'photos--many' : ''} ${images.length > 4 ? 'photos--lots' : ''}`}>
                   {images.map((url, i) => (
                     <Photo key={url} url={url} index={i} sender={message.sender_name} />
                   ))}
@@ -275,15 +275,18 @@ function Photo({ url, index, sender }) {
 
   return (
     <figure className={`photo ${state === 'loaded' ? 'is-loaded' : ''}`} style={{ '--photo-tilt': `${index % 2 ? 1.6 : -1.4}deg` }}>
-      <img
-        src={url}
-        alt={`Photo from ${sender}`}
-        loading="lazy"
-        decoding="async"
-        referrerPolicy="no-referrer"
-        onLoad={() => setState('loaded')}
-        onError={() => setState('failed')}
-      />
+      {/* Tap to see the photo full size. */}
+      <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open photo ${index + 1} from ${sender} full size`}>
+        <img
+          src={url}
+          alt={`Photo from ${sender}`}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onLoad={() => setState('loaded')}
+          onError={() => setState('failed')}
+        />
+      </a>
     </figure>
   );
 }

@@ -34,7 +34,11 @@ export function createPostgresRepository({ query, close = async () => {} }) {
   return {
     async listEnvelopes() {
       const { rows } = await query(
-        'select id, jsonb_array_length(image_urls) > 0 as has_image from birthday_messages order by id',
+        `select m.id,
+                (jsonb_array_length(m.image_urls) > 0
+                  or exists (select 1 from birthday_images i where i.message_id = m.id)) as has_image
+         from birthday_messages m
+         order by m.id`,
       );
       return rows.map((row) => toLockedEnvelope(row.id, row.has_image));
     },
@@ -46,11 +50,20 @@ export function createPostgresRepository({ query, close = async () => {} }) {
 
     async findForUnlock(id) {
       const { rows } = await query(
-        'select id, sender_name, password_hash, message, image_urls from birthday_messages where id = $1',
+        `select m.id, m.sender_name, m.password_hash, m.message, m.image_urls,
+                coalesce((select array_agg(i.id::text order by i.position)
+                          from birthday_images i where i.message_id = m.id), '{}') as image_ids
+         from birthday_messages m
+         where m.id = $1`,
         [id],
       );
       const row = rows[0];
       return row ? { ...row, id: Number(row.id), image_urls: parseImages(row.image_urls) } : null;
+    },
+
+    async findImage(id) {
+      const { rows } = await query('select mime_type, data from birthday_images where id = $1::uuid', [id]);
+      return rows[0] ? { mime_type: rows[0].mime_type, data: Buffer.from(rows[0].data) } : null;
     },
 
     async isDuplicate(senderName, message) {
@@ -61,15 +74,27 @@ export function createPostgresRepository({ query, close = async () => {} }) {
       return rows.length > 0;
     },
 
-    /** Inserts exactly one message and returns its locked envelope. */
-    async create({ senderName, hint, passwordHash, message, imageUrls }) {
+    /**
+     * Inserts exactly one message and its photos in a single statement (all or
+     * nothing) and returns its locked envelope. `imageUrls` is only used by the
+     * demo seed; friends upload `images`.
+     */
+    async create({ senderName, hint, passwordHash, message, imageUrls = [], images = [] }) {
+      const photos = images.map((image) => ({ id: image.id, type: image.mimeType, data: image.bytes.toString('base64') }));
       const { rows } = await query(
-        `insert into birthday_messages (sender_name, hint, password_hash, message, image_urls)
-         values ($1, $2, $3, $4, $5::jsonb)
-         returning id`,
-        [senderName, hint, passwordHash, message, JSON.stringify(imageUrls)],
+        `with m as (
+           insert into birthday_messages (sender_name, hint, password_hash, message, image_urls)
+           values ($1, $2, $3, $4, $5::jsonb)
+           returning id
+         ), photos as (
+           insert into birthday_images (id, message_id, position, mime_type, data)
+           select (p.photo->>'id')::uuid, m.id, (p.ord - 1)::smallint, p.photo->>'type', decode(p.photo->>'data', 'base64')
+           from m, jsonb_array_elements($6::jsonb) with ordinality as p(photo, ord)
+         )
+         select id from m`,
+        [senderName, hint, passwordHash, message, JSON.stringify(imageUrls), JSON.stringify(photos)],
       );
-      return toLockedEnvelope(rows[0].id, imageUrls.length > 0);
+      return toLockedEnvelope(rows[0].id, images.length > 0 || imageUrls.length > 0);
     },
 
     async count() {

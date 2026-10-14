@@ -12,6 +12,18 @@ create table if not exists public.birthday_messages (
   updated_at    timestamptz not null default now()
 );
 
+-- Uploaded photos. The random uuid is the photo's address (/api/images/<id>),
+-- handed out only after the envelope's password is entered.
+create table if not exists public.birthday_images (
+  id         uuid primary key,
+  message_id bigint not null references public.birthday_messages (id) on delete cascade,
+  position   smallint not null,
+  mime_type  text not null,
+  data       bytea not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists birthday_images_message_id_idx on public.birthday_images (message_id);
+
 create table if not exists public.rate_limits (
   key      text primary key,
   count    int not null,
@@ -21,4 +33,5 @@ create table if not exists public.rate_limits (
 -- Row Level Security with no policies = nobody can read these tables through
 -- Supabase's public API. Our server connects directly and is unaffected.
 alter table public.birthday_messages enable row level security;
+alter table public.birthday_images enable row level security;
 alter table public.rate_limits enable row level security;

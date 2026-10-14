@@ -152,6 +152,11 @@
   :root[data-theme='gold'] .modal__airmail {
     background: repeating-linear-gradient(135deg, #d4a017 0 14px, #fdf6e7 14px 22px, #3b2412 22px 36px, #fdf6e7 36px 44px);
   }
+  :root[data-theme='gold'] .modal .btn-ghost {
+    background: #fff;
+    border: 2px solid rgb(139 90 43 / 0.3);
+    color: #2b1a0c;
+  }
   :root[data-theme='gold'] .modal__close {
     background: #fff;
     color: #2b1a0c;
@@ -183,7 +188,18 @@
   :root[data-theme='gold'] .friend-card .field-error {
     color: #ff9f9f;
   }
-  :root[data-theme='gold'] .image-row__remove:hover,
+  :root[data-theme='gold'] .photo-drop {
+    background: rgb(28 18 10 / 0.5);
+    border-color: rgb(230 185 77 / 0.45);
+  }
+  :root[data-theme='gold'] .photo-drop:hover,
+  :root[data-theme='gold'] .photo-drop.is-dragging {
+    background: rgb(230 185 77 / 0.1);
+    border-color: var(--gold);
+  }
+  :root[data-theme='gold'] .photo-pick {
+    background: #2a1d10;
+  }
   :root[data-theme='gold'] .password-field__toggle:hover {
     background: rgb(230 185 77 / 0.15);
   }

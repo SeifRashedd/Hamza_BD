@@ -1,22 +1,15 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { BIRTHDAY_PERSON } from '../config.js';
 import { ApiError, api } from '../lib/api.js';
 import { burstFrom } from '../lib/confetti.js';
+import { MAX_PHOTOS, PhotoError, blobToBase64, fitPhotosToEnvelope, preparePhoto } from '../lib/photos.js';
 import { Reveal } from './Reveal.jsx';
 
-const MAX_IMAGES = 4;
 const MESSAGE_MAX = 5000;
 
-const EMPTY_FORM = { sender_name: '', hint: '', password: '', message: '', image_urls: [''], website: '' };
+const EMPTY_FORM = { sender_name: '', hint: '', password: '', message: '', website: '' };
 
-function looksLikeUrl(value) {
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === 'https:' || url.protocol === 'http:';
-  } catch {
-    return false;
-  }
-}
+let photoKey = 0;
 
 /**
  * The small "leave Hamza a message" form at the very end of the page.
@@ -34,23 +27,79 @@ export function FriendForm({ onCreated, notify }) {
   const [showPassword, setShowPassword] = useState(false);
   const [created, setCreated] = useState(null);
 
+  // Photos: [{ key, file, status: 'processing' | 'ready', blob, previewUrl }]
+  const [photos, setPhotosState] = useState([]);
+  const photosRef = useRef([]);
+  const pending = useRef(new Map()); // key → promise while a photo is being resized
+  const queue = useRef(Promise.resolve()); // photos are prepared one at a time (easy on phone memory)
+  const [photoNotice, setPhotoNotice] = useState('');
+  const [dragging, setDragging] = useState(false);
+
+  const setPhotos = (update) => {
+    photosRef.current = typeof update === 'function' ? update(photosRef.current) : update;
+    setPhotosState(photosRef.current);
+  };
+
+  // Free preview memory when the form goes away.
+  useEffect(() => () => photosRef.current.forEach((p) => p.previewUrl && URL.revokeObjectURL(p.previewUrl)), []);
+
   const set = (field) => (event) => {
     setValues((v) => ({ ...v, [field]: event.target.value }));
     if (errors[field]) setErrors(({ [field]: _removed, ...rest }) => rest);
   };
 
-  const setImage = (index, value) => {
-    setValues((v) => ({ ...v, image_urls: v.image_urls.map((u, i) => (i === index ? value : u)) }));
-    const key = `image_urls.${index}`;
-    if (errors[key]) setErrors(({ [key]: _removed, ...rest }) => rest);
+  const clearPhotoErrors = () =>
+    setErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith('images'))));
+
+  const addFiles = (fileList) => {
+    const files = [...fileList];
+    if (files.length === 0) return;
+
+    const room = MAX_PHOTOS - photosRef.current.length;
+    const accepted = files.slice(0, Math.max(0, room));
+    setPhotoNotice(files.length > room ? `You can add up to ${MAX_PHOTOS} photos.` : '');
+    clearPhotoErrors();
+
+    for (const file of accepted) {
+      const key = ++photoKey;
+      setPhotos((list) => [...list, { key, file, status: 'processing', blob: null, previewUrl: null }]);
+
+      const isStillPicked = () => photosRef.current.some((p) => p.key === key);
+
+      const job = queue.current
+        .then(() => (isStillPicked() ? preparePhoto(file) : null)) // skip photos removed while waiting
+        .then((prepared) => {
+          if (!prepared) return;
+          if (!isStillPicked()) {
+            URL.revokeObjectURL(prepared.previewUrl); // removed while it was being prepared
+            return;
+          }
+          const { blob, previewUrl } = prepared;
+          setPhotos((list) => list.map((p) => (p.key === key ? { ...p, status: 'ready', blob, previewUrl } : p)));
+        })
+        .catch((error) => {
+          setPhotos((list) => list.filter((p) => p.key !== key));
+          setPhotoNotice(error instanceof PhotoError ? error.message : 'That photo couldn’t be added. Try another one.');
+        })
+        .finally(() => pending.current.delete(key));
+
+      queue.current = job;
+      pending.current.set(key, job);
+    }
   };
 
-  const addImage = () => setValues((v) => ({ ...v, image_urls: [...v.image_urls, ''] }));
-  const removeImage = (index) => {
-    setValues((v) => ({ ...v, image_urls: v.image_urls.filter((_, i) => i !== index) }));
-    setErrors(({ image_urls: _a, ...rest }) =>
-      Object.fromEntries(Object.entries(rest).filter(([key]) => !key.startsWith('image_urls.'))),
-    );
+  const removePhoto = (key) => {
+    const photo = photosRef.current.find((p) => p.key === key);
+    if (photo?.previewUrl) URL.revokeObjectURL(photo.previewUrl);
+    setPhotos((list) => list.filter((p) => p.key !== key));
+    setPhotoNotice('');
+    clearPhotoErrors();
+  };
+
+  const resetPhotos = () => {
+    photosRef.current.forEach((p) => p.previewUrl && URL.revokeObjectURL(p.previewUrl));
+    setPhotos([]);
+    setPhotoNotice('');
   };
 
   const handleSubmit = async (event) => {
@@ -61,33 +110,33 @@ export function FriendForm({ onCreated, notify }) {
     setErrors({});
     setCreated(null);
 
-    // Server error keys refer to the non-empty links only; map them back to the inputs.
-    const filledIndexes = values.image_urls.map((url, i) => (url.trim() ? i : -1)).filter((i) => i >= 0);
-
     try {
+      // Wait for any photo that's still being resized, make sure they all fit in
+      // one envelope (only shrinks again when there are many), then send in order.
+      await Promise.allSettled([...pending.current.values()]);
+      const ready = photosRef.current.filter((p) => p.status === 'ready');
+      const blobs = await fitPhotosToEnvelope(ready);
+      const images = await Promise.all(blobs.map(async (blob) => ({ data: await blobToBase64(blob) })));
+
       const result = await api.submit({
         sender_name: values.sender_name,
         hint: values.hint,
         password: values.password,
         message: values.message,
-        image_urls: filledIndexes.map((i) => values.image_urls[i]),
+        images,
         website: values.website,
       });
 
       onCreated(result.envelope);
       setCreated(result.envelope);
       setValues(EMPTY_FORM);
+      resetPhotos();
       setShowPassword(false);
       notify(result.message || 'Your message has been added! 🎉', 'success');
       burstFrom(submitRef.current, { count: 120, angle: 90, spread: 100, speed: 14 });
     } catch (error) {
       if (error instanceof ApiError && error.errors && Object.keys(error.errors).length) {
-        const mapped = {};
-        for (const [key, value] of Object.entries(error.errors)) {
-          const match = key.match(/^image_urls\.(\d+)$/);
-          mapped[match ? `image_urls.${filledIndexes[Number(match[1])]}` : key] = value;
-        }
-        setErrors(mapped);
+        setErrors(error.errors);
         requestAnimationFrame(() => formRef.current?.querySelector('[aria-invalid="true"]')?.focus());
       } else {
         notify(error.message, 'error');
@@ -108,6 +157,12 @@ export function FriendForm({ onCreated, notify }) {
     'aria-invalid': Boolean(errors[field]),
     'aria-describedby': `${ids}-${field}-help ${ids}-${field}-error`,
   });
+
+  const photoErrors = photos
+    .map((photo, index) => errors[`images.${index}`] && `Photo ${index + 1}: ${errors[`images.${index}`]}`)
+    .filter(Boolean);
+  if (errors.images) photoErrors.push(errors.images);
+  if (photoNotice) photoErrors.push(photoNotice);
 
   return (
     <section id="leave-a-message" className="relative scroll-mt-6 px-4 pb-28 pt-6 sm:px-6" aria-labelledby={`${ids}-title`}>
@@ -226,63 +281,87 @@ export function FriendForm({ onCreated, notify }) {
             />
           </Field>
 
-          <fieldset className="images-fieldset">
+          <fieldset className="photos-field">
             <legend className="field-label">
               Photos <span className="field-optional">(optional)</span>
             </legend>
-            <p className="field-help" id={`${ids}-images-help`}>
-              Paste image links, e.g. https://example.com/photo.jpg
+            <p className="field-help" id={`${ids}-photos-help`}>
+              Up to {MAX_PHOTOS} photos from your phone or laptop.
             </p>
 
-            {values.image_urls.map((url, index) => {
-              const key = `image_urls.${index}`;
-              const valid = url.trim() && looksLikeUrl(url);
-              return (
-                <div key={index} className="image-row">
-                  <div className="image-row__input">
-                    <label htmlFor={`${ids}-${key}`} className="sr-only">
-                      Image link {index + 1}
-                    </label>
-                    <input
-                      id={`${ids}-${key}`}
-                      className="input"
-                      type="url"
-                      inputMode="url"
-                      autoComplete="off"
-                      placeholder="https://example.com/photo.jpg"
-                      value={url}
-                      maxLength={2048}
-                      onChange={(e) => setImage(index, e.target.value)}
-                      aria-invalid={Boolean(errors[key])}
-                      aria-describedby={`${ids}-images-help ${ids}-${key}-error`}
-                    />
-                    {valid && <ImagePreview url={url.trim()} />}
-                    {values.image_urls.length > 1 && (
-                      <button type="button" className="image-row__remove" onClick={() => removeImage(index)} aria-label={`Remove image link ${index + 1}`}>
-                        ✕
-                      </button>
+            {photos.length > 0 && (
+              <ul className="photo-picks">
+                {photos.map((photo, index) => (
+                  <li key={photo.key} className={`photo-pick ${errors[`images.${index}`] ? 'has-error' : ''}`}>
+                    {photo.previewUrl && <img src={photo.previewUrl} alt={`Photo ${index + 1}`} />}
+                    {photo.status === 'processing' && (
+                      <span className="photo-pick__busy">
+                        <span className="spinner" aria-hidden="true" />
+                        <span className="sr-only">Preparing photo {index + 1}…</span>
+                      </span>
                     )}
-                  </div>
-                  <p id={`${ids}-${key}-error`} className="field-error">
-                    {errors[key]}
-                  </p>
-                </div>
-              );
-            })}
-
-            {errors.image_urls && <p className="field-error">{errors.image_urls}</p>}
-
-            {values.image_urls.length < MAX_IMAGES && (
-              <button type="button" className="link-btn mt-1" onClick={addImage}>
-                + Add another photo
-              </button>
+                    <button
+                      type="button"
+                      className="photo-pick__remove"
+                      onClick={() => removePhoto(photo.key)}
+                      aria-label={`Remove photo ${index + 1}`}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
+
+            {photos.length < MAX_PHOTOS && (
+              <label
+                className={`photo-drop ${dragging ? 'is-dragging' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  addFiles(e.dataTransfer.files);
+                }}
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  aria-describedby={`${ids}-photos-help ${ids}-photos-error`}
+                  onChange={(e) => {
+                    addFiles(e.target.files);
+                    e.target.value = ''; // allow picking the same photo again after removing it
+                  }}
+                />
+                <span className="photo-drop__icon" aria-hidden="true">
+                  📸
+                </span>
+                <span className="photo-drop__title">{photos.length ? 'Add more photos' : 'Add photos'}</span>
+                <span className="photo-drop__sub">
+                  Choose from your gallery, camera or laptop
+                  <span className="photo-drop__drag"> — or drag them here</span>
+                </span>
+              </label>
+            )}
+
+            <div id={`${ids}-photos-error`} role={photoErrors.length ? 'alert' : undefined}>
+              {photoErrors.map((message) => (
+                <p key={message} className="field-error">
+                  {message}
+                </p>
+              ))}
+            </div>
           </fieldset>
 
           <button ref={submitRef} type="submit" className="btn-primary w-full sm:w-auto sm:self-center" disabled={submitting} aria-busy={submitting}>
             {submitting ? (
               <>
-                <span className="spinner" aria-hidden="true" /> Sealing your envelope…
+                <span className="spinner" aria-hidden="true" /> {photos.length ? 'Sending your photos…' : 'Sealing your envelope…'}
               </>
             ) : (
               <>
@@ -311,16 +390,4 @@ function Field({ label, field, ids, errors, help, children }) {
       </p>
     </div>
   );
-}
-
-function ImagePreview({ url }) {
-  const [failedUrl, setFailedUrl] = useState(null);
-  if (failedUrl === url) {
-    return (
-      <span className="image-row__preview image-row__preview--failed" title="We couldn’t load a preview — double-check the link">
-        ⚠️
-      </span>
-    );
-  }
-  return <img className="image-row__preview" src={url} alt="" referrerPolicy="no-referrer" onError={() => setFailedUrl(url)} />;
 }
