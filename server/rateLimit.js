@@ -1,35 +1,51 @@
 /**
- * Tiny in-memory fixed-window rate limiter. Good enough for a single-process
- * microsite; swap for a shared store if this ever runs on several instances.
+ * Fixed-window rate limiter. The counters live in a `store` with one method:
+ *   hit(key, windowMs) → Promise<{ count, resetAt }>
+ * Locally that's memory; on Vercel (many short-lived instances) it's the
+ * `rate_limits` table in Postgres, so every instance sees the same counts.
  */
-export function rateLimit({ windowMs, max, keyPrefix, key = (req) => req.ip, message }) {
+export function rateLimit({ store, windowMs, max, keyPrefix, key = (req) => req.ip, message }) {
+  return async function rateLimitMiddleware(req, res, next) {
+    try {
+      const { count, resetAt } = await store.hit(`${keyPrefix}:${key(req)}`, windowMs);
+
+      if (count > max) {
+        const retryAfter = Math.max(1, Math.ceil((new Date(resetAt).getTime() - Date.now()) / 1000));
+        res.set('Retry-After', String(retryAfter));
+        return res.status(429).json({ success: false, message });
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+/** In-memory store for a single long-running process (local dev, tests). */
+export function createMemoryRateStore() {
   const hits = new Map();
+  let lastSweep = Date.now();
 
-  const sweep = setInterval(() => {
-    const now = Date.now();
-    for (const [k, entry] of hits) {
-      if (entry.resetAt <= now) hits.delete(k);
-    }
-  }, Math.min(windowMs, 60_000));
-  sweep.unref();
+  return {
+    async hit(key, windowMs) {
+      const now = Date.now();
 
-  return function rateLimitMiddleware(req, res, next) {
-    const now = Date.now();
-    const id = `${keyPrefix}:${key(req)}`;
-    let entry = hits.get(id);
+      if (now - lastSweep > 60_000) {
+        for (const [k, entry] of hits) {
+          if (entry.resetAt <= now) hits.delete(k);
+        }
+        lastSweep = now;
+      }
 
-    if (!entry || entry.resetAt <= now) {
-      entry = { count: 0, resetAt: now + windowMs };
-      hits.set(id, entry);
-    }
+      let entry = hits.get(key);
+      if (!entry || entry.resetAt <= now) {
+        entry = { count: 0, resetAt: now + windowMs };
+        hits.set(key, entry);
+      }
+      entry.count += 1;
 
-    entry.count += 1;
-
-    if (entry.count > max) {
-      res.set('Retry-After', String(Math.ceil((entry.resetAt - now) / 1000)));
-      return res.status(429).json({ success: false, message });
-    }
-
-    next();
+      return { count: entry.count, resetAt: entry.resetAt };
+    },
   };
 }

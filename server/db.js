@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-
-const THEME_COUNT = 8;
+import { parseImages, toLockedEnvelope } from './envelope.js';
+import { createMemoryRateStore } from './rateLimit.js';
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS birthday_messages (
@@ -18,9 +18,10 @@ const SCHEMA = `
 `;
 
 /**
- * Opens (and migrates) the SQLite database and returns a small repository.
+ * Local SQLite repository (used on your machine and in tests). It has the same
+ * interface as the Postgres one in `postgres.js`; callers always `await` it.
  * Nothing in here ever returns a password hash or a message body except
- * `findForUnlock`, which is only used after the password has been checked.
+ * `findForUnlock`, which is only used to check a password.
  */
 export function openDatabase(file) {
   if (file !== ':memory:') {
@@ -48,9 +49,8 @@ export function openDatabase(file) {
   };
 
   return {
-    /** Public, locked view of every envelope: no sender, hint, password or message. */
     listEnvelopes() {
-      return statements.list.all().map(toLockedEnvelope);
+      return statements.list.all().map((row) => toLockedEnvelope(row.id, parseImages(row.image_urls).length > 0));
     },
 
     findHint(id) {
@@ -69,42 +69,19 @@ export function openDatabase(file) {
     /** Inserts exactly one message and returns its locked envelope. */
     create({ senderName, hint, passwordHash, message, imageUrls }) {
       const now = new Date().toISOString();
-      const result = statements.insert.run(
-        senderName,
-        hint,
-        passwordHash,
-        message,
-        JSON.stringify(imageUrls),
-        now,
-        now,
-      );
-      return toLockedEnvelope({ id: Number(result.lastInsertRowid), image_urls: JSON.stringify(imageUrls) });
+      const result = statements.insert.run(senderName, hint, passwordHash, message, JSON.stringify(imageUrls), now, now);
+      return toLockedEnvelope(result.lastInsertRowid, imageUrls.length > 0);
     },
 
     count() {
       return statements.count.get().total;
     },
 
+    // A single local process can keep rate-limit counters in memory.
+    rateLimitStore: createMemoryRateStore(),
+
     close() {
       db.close();
     },
   };
-}
-
-function toLockedEnvelope(row) {
-  const id = Number(row.id);
-  return {
-    id,
-    theme: id % THEME_COUNT,
-    has_image: parseImages(row.image_urls).length > 0,
-  };
-}
-
-function parseImages(value) {
-  try {
-    const parsed = JSON.parse(value ?? '[]');
-    return Array.isArray(parsed) ? parsed.filter((url) => typeof url === 'string') : [];
-  } catch {
-    return [];
-  }
 }

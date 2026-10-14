@@ -1,8 +1,10 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
-import { openDatabase } from './db.js';
 
-const db = openDatabase(config.databasePath);
+// Postgres when DATABASE_URL is set (e.g. testing against Supabase), otherwise local SQLite.
+const db = config.databaseUrl
+  ? (await import('./postgres.js')).openPostgres(config.databaseUrl)
+  : (await import('./db.js')).openDatabase(config.databasePath);
 const serveClient = process.env.SERVE_CLIENT !== 'false';
 
 const app = createApp({
@@ -14,12 +16,14 @@ const app = createApp({
 
 const server = app.listen(config.port, () => {
   const where = `http://localhost:${config.port}`;
+  const store = config.databaseUrl ? 'Postgres (DATABASE_URL)' : 'local SQLite';
   console.log(serveClient ? `🎂 Hamza's birthday site is live at ${where}` : `🎂 API listening on ${where}`);
+  console.log(`   Database: ${store}`);
 });
 
 function shutdown() {
-  server.close(() => {
-    db.close();
+  server.close(async () => {
+    await db.close();
     process.exit(0);
   });
 }

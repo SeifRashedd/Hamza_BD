@@ -9,10 +9,12 @@ const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 
 const SLOW_DOWN = 'Whoa, slow down! 😅 Take a breath and try again in a minute.';
+const BODY_LIMIT_BYTES = 32 * 1024;
 
 /**
  * Builds the Express app. Kept separate from `index.js` so tests can start it
- * on a random port with an in-memory database.
+ * on a random port with an in-memory database, and so Vercel can run it as a
+ * serverless function (`api/index.js`).
  */
 export function createApp({ db, serveClient = false, distDir, trustProxy = false }) {
   const app = express();
@@ -21,42 +23,46 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
   app.set('trust proxy', trustProxy);
 
   app.use(securityHeaders(serveClient));
-  app.use('/api', express.json({ limit: '32kb' }));
+  app.use('/api', jsonBody());
 
   const api = express.Router();
 
   // ── Rate limits ──────────────────────────────────────────────────────────
-  const submitPerMinute = rateLimit({ keyPrefix: 'submit-min', windowMs: MINUTE, max: 6, message: SLOW_DOWN });
+  const store = db.rateLimitStore;
+  const submitPerMinute = rateLimit({ store, keyPrefix: 'submit-min', windowMs: MINUTE, max: 6, message: SLOW_DOWN });
   const submitPerDay = rateLimit({
+    store,
     keyPrefix: 'submit-day',
     windowMs: DAY,
     max: 20,
     message: 'That’s a lot of love for one day 💕 Please try again tomorrow.',
   });
   const unlockPerEnvelope = rateLimit({
+    store,
     keyPrefix: 'unlock-env',
     windowMs: MINUTE,
     max: 10,
     key: (req) => `${req.ip}|${req.params.id}`,
     message: 'Too many guesses on this one 🙈 Take a minute and think about it!',
   });
-  const unlockOverall = rateLimit({ keyPrefix: 'unlock-all', windowMs: MINUTE, max: 60, message: SLOW_DOWN });
-  const readLimit = rateLimit({ keyPrefix: 'read', windowMs: MINUTE, max: 120, message: SLOW_DOWN });
+  const unlockOverall = rateLimit({ store, keyPrefix: 'unlock-all', windowMs: MINUTE, max: 60, message: SLOW_DOWN });
+  const readLimit = rateLimit({ store, keyPrefix: 'read', windowMs: MINUTE, max: 120, message: SLOW_DOWN });
 
   // ── Routes ───────────────────────────────────────────────────────────────
 
   /** Locked envelopes only: id, colour theme and whether there's a photo inside. */
-  api.get('/envelopes', readLimit, (req, res) => {
+  api.get('/envelopes', readLimit, async (req, res) => {
+    const envelopes = await db.listEnvelopes();
     res.set('Cache-Control', 'no-store');
-    res.json({ envelopes: db.listEnvelopes() });
+    res.json({ envelopes });
   });
 
   /** The hint is only handed out once an envelope is opened. */
-  api.get('/envelopes/:id', readLimit, withEnvelopeId, (req, res) => {
-    const row = db.findHint(req.envelopeId);
+  api.get('/envelopes/:id', readLimit, withEnvelopeId, async (req, res) => {
+    const row = await db.findHint(req.envelopeId);
     if (!row) return notFound(res);
     res.set('Cache-Control', 'no-store');
-    res.json({ envelope: { id: row.id, hint: row.hint } });
+    res.json({ envelope: { id: Number(row.id), hint: row.hint } });
   });
 
   api.post('/messages', requireJson, submitPerMinute, submitPerDay, async (req, res, next) => {
@@ -67,7 +73,7 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
         return res.status(422).json({ success: false, message: 'Something went wrong. Please try again.' });
       }
 
-      if (Object.keys(errors).length === 0 && db.isDuplicate(data.senderName, data.message)) {
+      if (Object.keys(errors).length === 0 && (await db.isDuplicate(data.senderName, data.message))) {
         errors.message = 'Looks like this exact message was already sent 💌';
       }
 
@@ -75,7 +81,7 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
         return res.status(422).json({ success: false, message: 'Please check the highlighted fields.', errors });
       }
 
-      const envelope = db.create({
+      const envelope = await db.create({
         senderName: data.senderName,
         hint: data.hint,
         passwordHash: await hashPassword(data.password),
@@ -102,7 +108,7 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
           return res.status(422).json({ success: false, message: errors.password, errors });
         }
 
-        const row = db.findForUnlock(req.envelopeId);
+        const row = await db.findForUnlock(req.envelopeId);
         if (!row) return notFound(res);
 
         if (!(await verifyPassword(password, row.password_hash))) {
@@ -113,7 +119,7 @@ export function createApp({ db, serveClient = false, distDir, trustProxy = false
         res.json({
           success: true,
           message: {
-            id: row.id,
+            id: Number(row.id),
             sender_name: row.sender_name,
             message: row.message,
             image_url: row.image_urls[0] ?? null,
@@ -156,6 +162,31 @@ function withEnvelopeId(req, res, next) {
   if (!/^\d{1,10}$/.test(req.params.id)) return notFound(res);
   req.envelopeId = Number(req.params.id);
   next();
+}
+
+/**
+ * JSON body parser. Vercel's Node runtime may already have read and parsed the
+ * body before Express sees the request; in that case use its result instead of
+ * waiting on a stream that has already been consumed.
+ */
+function jsonBody() {
+  const parse = express.json({ limit: BODY_LIMIT_BYTES });
+
+  return (req, res, next) => {
+    let preParsed;
+    try {
+      preParsed = req.body;
+    } catch {
+      return res.status(400).json({ success: false, message: 'We couldn’t read that request.' });
+    }
+
+    if (preParsed === undefined) return parse(req, res, next);
+
+    if (Number(req.headers['content-length']) > BODY_LIMIT_BYTES) {
+      return res.status(413).json({ success: false, message: 'That message is too big to fit in an envelope 😅' });
+    }
+    next();
+  };
 }
 
 /** Only accept JSON bodies — this also blocks simple cross-site form posts. */

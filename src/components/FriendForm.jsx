@@ -168,7 +168,7 @@ export function FriendForm({ onCreated, notify }) {
                   autoCapitalize="off"
                   spellCheck={false}
                   maxLength={64}
-                  placeholder="SmartFit"
+                  placeholder="password"
                   value={values.password}
                   onChange={set('password')}
                   required
