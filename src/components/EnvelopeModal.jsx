@@ -155,6 +155,11 @@ export function EnvelopeModal({ envelope, number, hint, unlockedMessage, hasNext
               <h2 id={`${ids}-title`} ref={headingRef} tabIndex={-1} className="modal__title">
                 <span aria-hidden="true">🔐 </span>This message is locked
               </h2>
+              {envelope.sender_name && (
+                <p className="modal__from">
+                  From <strong>{envelope.sender_name}</strong>
+                </p>
+              )}
 
               <div className="hint-card" aria-live="polite">
                 <span className="hint-card__label">Hint</span>

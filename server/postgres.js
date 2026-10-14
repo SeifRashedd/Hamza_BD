@@ -34,13 +34,13 @@ export function createPostgresRepository({ query, close = async () => {} }) {
   return {
     async listEnvelopes() {
       const { rows } = await query(
-        `select m.id,
+        `select m.id, m.sender_name,
                 (jsonb_array_length(m.image_urls) > 0
                   or exists (select 1 from birthday_images i where i.message_id = m.id)) as has_image
          from birthday_messages m
          order by m.id`,
       );
-      return rows.map((row) => toLockedEnvelope(row.id, row.has_image));
+      return rows.map((row) => toLockedEnvelope(row.id, row.has_image, row.sender_name));
     },
 
     async findHint(id) {
@@ -94,7 +94,7 @@ export function createPostgresRepository({ query, close = async () => {} }) {
          select id from m`,
         [senderName, hint, passwordHash, message, JSON.stringify(imageUrls), JSON.stringify(photos)],
       );
-      return toLockedEnvelope(rows[0].id, images.length > 0 || imageUrls.length > 0);
+      return toLockedEnvelope(rows[0].id, images.length > 0 || imageUrls.length > 0, senderName);
     },
 
     async count() {

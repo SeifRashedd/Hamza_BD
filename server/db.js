@@ -45,7 +45,7 @@ export function openDatabase(file) {
 
   const statements = {
     list: db.prepare(`
-      SELECT m.id, m.image_urls,
+      SELECT m.id, m.sender_name, m.image_urls,
              EXISTS (SELECT 1 FROM birthday_images i WHERE i.message_id = m.id) AS has_upload
       FROM birthday_messages m ORDER BY m.id ASC
     `),
@@ -73,7 +73,9 @@ export function openDatabase(file) {
     listEnvelopes() {
       return statements.list
         .all()
-        .map((row) => toLockedEnvelope(row.id, row.has_upload === 1 || parseImages(row.image_urls).length > 0));
+        .map((row) =>
+          toLockedEnvelope(row.id, row.has_upload === 1 || parseImages(row.image_urls).length > 0, row.sender_name),
+        );
     },
 
     findHint(id) {
@@ -112,7 +114,7 @@ export function openDatabase(file) {
           statements.insertImage.run(image.id, result.lastInsertRowid, position, image.mimeType, image.bytes, now);
         });
         db.exec('COMMIT');
-        return toLockedEnvelope(result.lastInsertRowid, images.length > 0 || imageUrls.length > 0);
+        return toLockedEnvelope(result.lastInsertRowid, images.length > 0 || imageUrls.length > 0, senderName);
       } catch (error) {
         db.exec('ROLLBACK');
         throw error;

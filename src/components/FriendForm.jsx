@@ -198,7 +198,7 @@ export function FriendForm({ onCreated, notify }) {
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Your name" field="sender_name" ids={ids} errors={errors} help="Revealed only after unlocking.">
+            <Field label="Your name" field="sender_name" ids={ids} errors={errors} help={`Shown on your envelope, so ${BIRTHDAY_PERSON} can guess your password.`}>
               <input
                 {...fieldProps('sender_name')}
                 className="input"

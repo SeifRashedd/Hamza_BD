@@ -93,22 +93,25 @@ for (const [backend, openDb] of Object.entries(BACKENDS)) {
       assert.equal(data.success, true);
       assert.equal(data.message, 'Your message has been added! 🎉');
       assert.equal(await db.count(), before + 1);
-      assert.deepEqual(Object.keys(data.envelope).sort(), ['has_image', 'id', 'theme']);
+      assert.deepEqual(Object.keys(data.envelope).sort(), ['has_image', 'id', 'sender_name', 'theme']);
       assert.equal(typeof data.envelope.id, 'number');
+      assert.equal(data.envelope.sender_name, 'Ahmed');
       assert.equal(data.envelope.has_image, true);
     });
 
-    it('never exposes sender, password, hint or message in the envelope list', async () => {
-      await submit({ sender_name: 'Secret Sender', password: 'TopSecret99', message: 'A very hidden message body' });
+    it('shows the sender in the envelope list, but never the password, hint, message or photos', async () => {
+      await submit({ sender_name: 'Visible Sender', password: 'TopSecret99', message: 'A very hidden message body' });
 
       const res = await call('/api/envelopes');
       const raw = await res.text();
+      const { envelopes } = JSON.parse(raw);
 
-      for (const secret of ['Secret Sender', 'TopSecret99', 'A very hidden message body', 'Our first university project', 'scrypt', '/api/images/']) {
+      assert.ok(envelopes.some((e) => e.sender_name === 'Visible Sender'), 'sender name should be listed');
+      for (const secret of ['TopSecret99', 'A very hidden message body', 'Our first university project', 'scrypt', '/api/images/']) {
         assert.ok(!raw.includes(secret), `list response leaked "${secret}"`);
       }
-      for (const envelope of JSON.parse(raw).envelopes) {
-        assert.deepEqual(Object.keys(envelope).sort(), ['has_image', 'id', 'theme']);
+      for (const envelope of envelopes) {
+        assert.deepEqual(Object.keys(envelope).sort(), ['has_image', 'id', 'sender_name', 'theme']);
       }
     });
 

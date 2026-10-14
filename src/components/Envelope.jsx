@@ -8,6 +8,7 @@ import { useInView } from '../lib/useInView.js';
  */
 export const Envelope = forwardRef(function Envelope({ envelope, number, isOpening, unlockedMessage, isNew, onOpen }, pinRef) {
   const isUnlocked = Boolean(unlockedMessage);
+  const senderName = envelope.sender_name ?? unlockedMessage?.sender_name ?? 'a friend';
   const isOpen = isOpening || isUnlocked;
   const tilt = (((envelope.id * 37) % 7) - 3) * 0.7;
   const floatDelay = -((envelope.id * 1.3) % 6);
@@ -64,8 +65,8 @@ export const Envelope = forwardRef(function Envelope({ envelope, number, isOpeni
           onClick={() => onOpen(envelope.id)}
           aria-label={
             isUnlocked
-              ? `Read envelope number ${number} again, from ${unlockedMessage.sender_name}`
-              : `Open envelope number ${number}${envelope.has_image ? ', it includes a photo' : ''}`
+              ? `Read envelope number ${number} from ${senderName} again`
+              : `Open envelope number ${number} from ${senderName}${envelope.has_image ? ', it includes a photo' : ''}`
           }
         >
           <span className="pin__head" aria-hidden="true" />
@@ -74,21 +75,21 @@ export const Envelope = forwardRef(function Envelope({ envelope, number, isOpeni
       </div>
 
       <div className="envelope-card__caption">
-        {isUnlocked ? (
-          <>
-            <p className="envelope-card__from">
-              <span aria-hidden="true">💌</span> From {unlockedMessage.sender_name}
-            </p>
-            <p className="envelope-card__tip">Tap to read again</p>
-          </>
-        ) : (
-          <>
-            <p className="envelope-card__mystery">Someone left you a message…</p>
-            <p className="envelope-card__tip">
+        {/* The sender is shown even while locked, so Hamza can guess the password. */}
+        <p className="envelope-card__from">
+          <span aria-hidden="true">💌</span> From {senderName}
+        </p>
+        <p className="envelope-card__tip">
+          {isUnlocked ? (
+            <>
+              Opened <span aria-hidden="true">💖</span> Tap to read again
+            </>
+          ) : (
+            <>
               Tap the pin <span aria-hidden="true">📌</span>
-            </p>
-          </>
-        )}
+            </>
+          )}
+        </p>
       </div>
     </li>
   );
